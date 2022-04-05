@@ -488,7 +488,7 @@ func FixImports(f *pe.File, local_image []byte) error {
 	names, _ := ds.Data()
 	for _, dt := range ida {
 		dt.DllName, _ = getString(names, int(dt.Name-ds.VirtualAddress))
-
+		fmt.Println(dt.DllName)
 		libHandle, err := windows.LoadLibrary(dt.DllName)
 		if err != nil {
 			return err
