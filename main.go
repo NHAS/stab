@@ -19,9 +19,9 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-const IMAGE_REL_BASED_ABSOLUTE = 0
-const IMAGE_REL_BASED_HIGHLOW = 3
-const IMAGE_REL_BASED_DIR64 = 10
+const IMAGE_REL_BASED_ABSOLUTE = uint8(0)
+const IMAGE_REL_BASED_HIGHLOW = uint8(3)
+const IMAGE_REL_BASED_DIR64 = uint8(10)
 
 const IMAGE_ORDINAL_FLAG64 = uint64(0x8000000000000000)
 const IMAGE_ORDINAL_FLAG32 = uint32(0x80000000)
@@ -236,8 +236,6 @@ func RebaseImage(local_image []byte, peInfo PEInfo) error {
 
 	delta := peInfo.WriteHandle - uintptr(peInfo.OriginalImageBase)
 
-	fmt.Printf("New base: %x, Old base: %x, Delta: %d\n", peInfo.WriteHandle, peInfo.OriginalImageBase, delta)
-
 	sectionReader := relocsSection.Open()
 
 	for {
@@ -257,20 +255,17 @@ func RebaseImage(local_image []byte, peInfo PEInfo) error {
 				break
 			}
 
-			t := r >> 12
+			t := uint8(r >> 12)
 			offset := r & Reloc(0x0FFF)
 
-			fmt.Print("offset: ", offset, " address: ", reloc.VirtualAddress)
 			switch t {
 			case IMAGE_REL_BASED_DIR64:
 
 				orgAddress := binary.LittleEndian.Uint64(local_image[reloc.VirtualAddress+uint32(offset):])
-				fmt.Println(", org address: ", orgAddress, " result: ", orgAddress+uint64(delta))
 				binary.LittleEndian.PutUint64(local_image[reloc.VirtualAddress+uint32(offset):], orgAddress+uint64(delta))
 			case IMAGE_REL_BASED_HIGHLOW:
 
 				orgAddress := binary.LittleEndian.Uint32(local_image[reloc.VirtualAddress+uint32(offset):])
-				fmt.Println(", org address: ", orgAddress, " result: ", orgAddress+uint32(delta))
 
 				binary.LittleEndian.PutUint32(local_image[reloc.VirtualAddress+uint32(offset):], orgAddress+uint32(delta))
 			default:
@@ -320,7 +315,12 @@ func CallDLLMain(remoteAddr uintptr, entry uintptr, processHandle uintptr) error
 	if err != nil {
 		return err
 	}
-	bufio.NewReader(os.Stdin).ReadBytes('\n')
+
+	_, err = bufio.NewReader(os.Stdin).ReadBytes('\n')
+	if err != nil {
+		return nil
+	}
+
 	threadHandle, _, err := CreateRemoteThread(syscall.Handle(processHandle), nil, 0, shellCodeWriteHandle, 0, 0)
 	if err != nil {
 		return err
@@ -488,19 +488,21 @@ func FixImports(f *pe.File, local_image []byte) error {
 	names, _ := ds.Data()
 	for _, dt := range ida {
 		dt.DllName, _ = getString(names, int(dt.Name-ds.VirtualAddress))
-		fmt.Println(dt.DllName)
 		libHandle, err := windows.LoadLibrary(dt.DllName)
 		if err != nil {
 			return err
 		}
 
+		fmt.Println("Resolving: ", dt.DllName)
 		// seek to OriginalFirstThunk
 		index := dt.OriginalFirstThunk
 		if index == 0 {
 			index = dt.FirstThunk
 		}
 
-		d = local_image[dt.OriginalFirstThunk:]
+		fmt.Println("Thunk: ", index)
+
+		d = local_image[index:]
 
 		for len(d) > 0 {
 			//Begin parsing IMAGE_THUNK_DATA
@@ -513,23 +515,29 @@ func FixImports(f *pe.File, local_image []byte) error {
 					break
 				}
 
+				fmt.Println("before r ", va)
+
 				var proc uintptr
 				if va&IMAGE_ORDINAL_FLAG64 > 0 {
 					// is Ordinal
 
-					proc, err = GetProcAddressByOrdinal(syscall.Handle(libHandle), uintptr(va))
+					proc, err = GetProcAddressByOrdinal(syscall.Handle(libHandle), uintptr(va&0xffff))
 					if err != nil {
 						return err
 					}
+
 				} else {
 					fn, _ := getString(names, int(uint32(va)-ds.VirtualAddress+2))
 					proc, err = windows.GetProcAddress(libHandle, fn)
 					if err != nil {
 						return err
 					}
+
 				}
 
 				binary.LittleEndian.PutUint64(d, uint64(proc))
+
+				fmt.Println("after r ", binary.LittleEndian.Uint64(d[0:8]))
 
 				d = d[8:]
 			} else { // 32bit
@@ -541,8 +549,7 @@ func FixImports(f *pe.File, local_image []byte) error {
 				}
 				var proc uintptr
 				if va&IMAGE_ORDINAL_FLAG32 > 0 { // is Ordinal
-					//ord := va & 0x0000FFFF
-					proc, err = GetProcAddressByOrdinal(syscall.Handle(libHandle), uintptr(va))
+					proc, err = GetProcAddressByOrdinal(syscall.Handle(libHandle), uintptr(va&0x0000FFFF))
 					if err != nil {
 						return err
 					}
