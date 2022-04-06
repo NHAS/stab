@@ -500,8 +500,6 @@ func FixImports(f *pe.File, local_image []byte) error {
 			index = dt.FirstThunk
 		}
 
-		fmt.Println("Thunk: ", index)
-
 		d = local_image[index:]
 
 		for len(d) > 0 {
@@ -514,8 +512,6 @@ func FixImports(f *pe.File, local_image []byte) error {
 					d = d[8:]
 					break
 				}
-
-				fmt.Println("before r ", va)
 
 				var proc uintptr
 				if va&IMAGE_ORDINAL_FLAG64 > 0 {
@@ -532,12 +528,10 @@ func FixImports(f *pe.File, local_image []byte) error {
 					if err != nil {
 						return err
 					}
-
+					fmt.Printf("Function: %s %s %x\n", dt.DllName, fn, proc)
 				}
 
 				binary.LittleEndian.PutUint64(d, uint64(proc))
-
-				fmt.Println("after r ", binary.LittleEndian.Uint64(d[0:8]))
 
 				d = d[8:]
 			} else { // 32bit
