@@ -495,21 +495,26 @@ func FixImports(f *pe.File, local_image []byte) error {
 
 		fmt.Println("Resolving: ", dt.DllName)
 		// seek to OriginalFirstThunk
-		index := dt.OriginalFirstThunk
-		if index == 0 {
-			index = dt.FirstThunk
+		OrgFirstThunkIndex := dt.OriginalFirstThunk
+		if OrgFirstThunkIndex == 0 {
+			OrgFirstThunkIndex = dt.FirstThunk
 		}
 
-		d = local_image[index:]
+		// WE read from the original first thunk array, and write to the FirstThunk array
+		originalFirstThunk := local_image[OrgFirstThunkIndex:]
+		thunk := local_image[dt.FirstThunk:]
 
-		for len(d) > 0 {
+		for len(originalFirstThunk) > 0 {
 			//Begin parsing IMAGE_THUNK_DATA
 
 			if pe64 { // 64bit
-				va := binary.LittleEndian.Uint64(d[0:8])
+				va := binary.LittleEndian.Uint64(originalFirstThunk[0:8])
 
 				if va == 0 {
-					d = d[8:]
+
+					originalFirstThunk = originalFirstThunk[8:]
+					thunk = thunk[8:]
+
 					break
 				}
 
@@ -531,14 +536,16 @@ func FixImports(f *pe.File, local_image []byte) error {
 					fmt.Printf("Function: %s %s %x\n", dt.DllName, fn, proc)
 				}
 
-				binary.LittleEndian.PutUint64(d, uint64(proc))
+				binary.LittleEndian.PutUint64(thunk, uint64(proc))
 
-				d = d[8:]
+				originalFirstThunk = originalFirstThunk[8:]
+				thunk = thunk[8:]
+
 			} else { // 32bit
-				va := binary.LittleEndian.Uint32(d[0:4])
+				va := binary.LittleEndian.Uint32(originalFirstThunk[0:4])
 
 				if va == 0 {
-					d = d[4:]
+					originalFirstThunk = originalFirstThunk[4:]
 					break
 				}
 				var proc uintptr
@@ -555,9 +562,9 @@ func FixImports(f *pe.File, local_image []byte) error {
 					}
 				}
 
-				binary.LittleEndian.PutUint32(d, uint32(proc))
+				binary.LittleEndian.PutUint32(originalFirstThunk, uint32(proc))
 
-				d = d[4:]
+				originalFirstThunk = originalFirstThunk[4:]
 
 			}
 		}
