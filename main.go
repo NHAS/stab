@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"debug/pe"
 	"encoding/binary"
@@ -308,11 +307,6 @@ func CallDLLMain(remoteAddr uintptr, entry uintptr, processHandle uintptr) error
 
 	if err != nil {
 		return err
-	}
-
-	_, err = bufio.NewReader(os.Stdin).ReadBytes('\n')
-	if err != nil {
-		return nil
 	}
 
 	threadHandle, _, err := CreateRemoteThread(syscall.Handle(processHandle), nil, 0, shellCodeWriteHandle, 0, 0)
