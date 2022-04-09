@@ -3,7 +3,7 @@ Stab is a fully golang Manual Mapper that can inject x86 and x64 bit DLLs into l
 Local meaning our current process, and remote meaning another process on the same machine that is owned by the same user.
 
 
-This project provides a the `MemoryLoadLibrary(...)` function which can load a DLL from bytes. Which is handy for fileless exploitation. 
+This project provides the `MemoryLoadLibrary(...)` function which can load a DLL from bytes. Which is handy for fileless exploitation. 
 
 ## Run me
 This project also contains a little main function as an example of how to use the methods. 
