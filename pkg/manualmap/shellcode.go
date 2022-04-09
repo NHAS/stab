@@ -1,4 +1,4 @@
-package main
+package manualmap
 
 type Shellcode struct {
 	Instruct         []byte

@@ -1,6 +1,6 @@
 //go:build windows && 386
 
-package main
+package manualmap
 
 const IMAGE_ORDINAL = uint32(0x80000000)
 
