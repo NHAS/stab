@@ -143,7 +143,7 @@ type PEInfo struct {
 	WriteHandle uintptr
 
 	PE64Bit             bool
-	OriginalImageBase   uint64
+	OriginalImageBase   uintptr
 	SizeOfImage         uint32
 	SizeOfHeaders       uint32
 	AddressOfEntryPoint uint32
@@ -256,15 +256,10 @@ func RebaseImage(local_image []byte, peInfo PEInfo) error {
 			offset := r & Reloc(0x0FFF)
 
 			switch t {
-			case IMAGE_REL_BASED_DIR64:
+			case IMAGE_REL_BASED_DIR64, IMAGE_REL_BASED_HIGHLOW:
+				orgAddress, _ := Read(local_image[reloc.VirtualAddress+uint32(offset):])
+				Write(orgAddress+delta, local_image[reloc.VirtualAddress+uint32(offset):])
 
-				orgAddress := binary.LittleEndian.Uint64(local_image[reloc.VirtualAddress+uint32(offset):])
-				binary.LittleEndian.PutUint64(local_image[reloc.VirtualAddress+uint32(offset):], orgAddress+uint64(delta))
-			case IMAGE_REL_BASED_HIGHLOW:
-
-				orgAddress := binary.LittleEndian.Uint32(local_image[reloc.VirtualAddress+uint32(offset):])
-
-				binary.LittleEndian.PutUint32(local_image[reloc.VirtualAddress+uint32(offset):], orgAddress+uint32(delta))
 			default:
 
 			}
@@ -279,6 +274,8 @@ func RebaseImage(local_image []byte, peInfo PEInfo) error {
 func CallDLLMain(remoteAddr uintptr, entry uintptr, processHandle uintptr) error {
 	//https://github.com/memN0ps/arsenal-rs/blob/main/manual_map-rs/src/lib.rs
 	// Thank you bon
+
+	//Only 64 bit currently
 	shellcode := []byte{
 		0x48, 0x83, 0xEC, 0x28, // sub rsp, 28h
 		0x48, 0xB9, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // mov rcx, image_base  ; hinstDLL
@@ -373,9 +370,9 @@ func GetPEBasicInfo(PE []byte) (PEInfo, error) {
 	p.PE64Bit = f.Machine == pe.IMAGE_FILE_MACHINE_AMD64 || f.Machine == pe.IMAGE_FILE_MACHINE_ARM64
 
 	if p.PE64Bit {
-		p.OriginalImageBase = f.OptionalHeader.(*pe.OptionalHeader64).ImageBase
+		p.OriginalImageBase = uintptr(f.OptionalHeader.(*pe.OptionalHeader64).ImageBase)
 	} else {
-		p.OriginalImageBase = uint64(f.OptionalHeader.(*pe.OptionalHeader32).ImageBase)
+		p.OriginalImageBase = uintptr(f.OptionalHeader.(*pe.OptionalHeader32).ImageBase)
 	}
 
 	if p.PE64Bit {
@@ -522,7 +519,6 @@ func FixImports(f *pe.File, local_image []byte) error {
 				}
 			} else {
 				fn, _ := getString(names, int(uint32(va)-ds.VirtualAddress+2))
-				fmt.Println(fn)
 				proc, err = windows.GetProcAddress(libHandle, fn)
 				if err != nil {
 					return err
