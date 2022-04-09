@@ -23,9 +23,6 @@ const IMAGE_REL_BASED_ABSOLUTE = uint8(0)
 const IMAGE_REL_BASED_HIGHLOW = uint8(3)
 const IMAGE_REL_BASED_DIR64 = uint8(10)
 
-const IMAGE_ORDINAL_FLAG64 = uint64(0x8000000000000000)
-const IMAGE_ORDINAL_FLAG32 = uint32(0x80000000)
-
 const PROCESS_ALL_ACCESS = 0x1F0FFF
 
 var (
@@ -504,73 +501,68 @@ func FixImports(f *pe.File, local_image []byte) error {
 		originalFirstThunk := local_image[OrgFirstThunkIndex:]
 		thunk := local_image[dt.FirstThunk:]
 
-		for len(originalFirstThunk) > 0 {
+		ptrSize := unsafe.Sizeof(uintptr(0))
+
+		for {
 			//Begin parsing IMAGE_THUNK_DATA
 
-			if pe64 { // 64bit
-				va := binary.LittleEndian.Uint64(originalFirstThunk[0:8])
-
-				if va == 0 {
-
-					originalFirstThunk = originalFirstThunk[8:]
-					thunk = thunk[8:]
-
-					break
-				}
-
-				var proc uintptr
-				if va&IMAGE_ORDINAL_FLAG64 > 0 {
-					// is Ordinal
-
-					proc, err = GetProcAddressByOrdinal(syscall.Handle(libHandle), uintptr(va&0xffff))
-					if err != nil {
-						return err
-					}
-
-				} else {
-					fn, _ := getString(names, int(uint32(va)-ds.VirtualAddress+2))
-					proc, err = windows.GetProcAddress(libHandle, fn)
-					if err != nil {
-						return err
-					}
-					fmt.Printf("Function: %s %s %x\n", dt.DllName, fn, proc)
-				}
-
-				binary.LittleEndian.PutUint64(thunk, uint64(proc))
-
-				originalFirstThunk = originalFirstThunk[8:]
-				thunk = thunk[8:]
-
-			} else { // 32bit
-				va := binary.LittleEndian.Uint32(originalFirstThunk[0:4])
-
-				if va == 0 {
-					originalFirstThunk = originalFirstThunk[4:]
-					break
-				}
-				var proc uintptr
-				if va&IMAGE_ORDINAL_FLAG32 > 0 { // is Ordinal
-					proc, err = GetProcAddressByOrdinal(syscall.Handle(libHandle), uintptr(va&0x0000FFFF))
-					if err != nil {
-						return err
-					}
-				} else {
-					fn, _ := getString(names, int(va-ds.VirtualAddress+2))
-					proc, err = windows.GetProcAddress(libHandle, fn)
-					if err != nil {
-						return err
-					}
-				}
-
-				binary.LittleEndian.PutUint32(originalFirstThunk, uint32(proc))
-
-				originalFirstThunk = originalFirstThunk[4:]
-
+			//Effectively advancing originalFirstThunk = originalFirstThunk[ptrSize:]
+			var va uintptr
+			va, originalFirstThunk = Read(originalFirstThunk)
+			if va == 0 {
+				break
 			}
+
+			var proc uintptr
+
+			if va&uintptr(IMAGE_ORDINAL) > 0 {
+				proc, err = GetProcAddressByOrdinal(syscall.Handle(libHandle), uintptr(va&0xffff))
+				if err != nil {
+					return err
+				}
+			} else {
+				fn, _ := getString(names, int(uint32(va)-ds.VirtualAddress+2))
+				fmt.Println(fn)
+				proc, err = windows.GetProcAddress(libHandle, fn)
+				if err != nil {
+					return err
+				}
+			}
+
+			Write(proc, thunk)
+
+			thunk = thunk[ptrSize:]
 		}
 	}
 
 	return nil
+}
+
+func Write(proc uintptr, location []byte) {
+
+	ptrSize := unsafe.Sizeof(proc)
+	for i := uintptr(0); i < ptrSize; i += 2 {
+
+		nProc := proc >> (i * ptrSize)
+
+		binary.LittleEndian.PutUint16(location, uint16(nProc))
+		location = location[2:]
+	}
+}
+
+func Read(location []byte) (data uintptr, finishedLoc []byte) {
+
+	finishedLoc = location
+	ptrSize := unsafe.Sizeof(uintptr(0))
+	i := uintptr(0)
+	for ; i < ptrSize; i += 2 {
+
+		val := uintptr(binary.LittleEndian.Uint16(finishedLoc))
+		data |= val << (i * ptrSize)
+		finishedLoc = finishedLoc[2:]
+	}
+
+	return
 }
 
 // getString extracts a string from symbol string table.
