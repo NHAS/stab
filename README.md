@@ -9,11 +9,16 @@ This project provides the `MemoryLoadLibrary(...)` function which can load a DLL
 This project also contains a little main function as an example of how to use the methods. 
 
 ```
+#Build
 GOOS=windows go build
 
  #Inject into the local process
-./stab .\Path\to\dll
+./stab.exe .\Path\to\dll
 
  #Inject into a remote process
-./stab .\Path\to\dll 2910
+./stab.exe .\Path\to\dll 2910
+
+#Build with embedded DLL (put DLL in pkg/embed/preload)
+GOOS=windows go build -tags=embed
+./stab.exe <pid>
 ```
