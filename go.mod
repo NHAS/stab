@@ -1,4 +1,4 @@
-module reflectivePEdll
+module stab
 
 go 1.18
 
