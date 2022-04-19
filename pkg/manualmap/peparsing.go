@@ -3,6 +3,7 @@ package manualmap
 import "debug/pe"
 
 type PEInfo struct {
+	DLL         bool
 	WriteHandle uintptr
 
 	PE64Bit             bool

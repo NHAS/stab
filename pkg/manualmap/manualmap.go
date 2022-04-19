@@ -51,9 +51,18 @@ func MemoryLoadLibrary(PE []byte, pid int) error {
 
 	entry := peInfo.WriteHandle + uintptr(peInfo.AddressOfEntryPoint)
 
-	err = CallDLLMain(peInfo.WriteHandle, entry, uintptr(remoteProcess))
-	if err != nil {
-		return err
+	if peInfo.DLL {
+		err = CallDLLMain(peInfo.WriteHandle, entry, uintptr(remoteProcess))
+		if err != nil {
+			return err
+		}
+	} else {
+		threadHandle, _, err := CreateRemoteThread(syscall.Handle(remoteProcess), nil, 0, entry, 0, 0)
+		if err != nil {
+			return err
+		}
+
+		windows.CloseHandle(windows.Handle(threadHandle))
 	}
 
 	return windows.CloseHandle(remoteProcess)
@@ -183,6 +192,12 @@ func GetPEBasicInfo(PE []byte) (PEInfo, error) {
 
 	var p PEInfo
 	p.PE64Bit = f.Machine == pe.IMAGE_FILE_MACHINE_AMD64 || f.Machine == pe.IMAGE_FILE_MACHINE_ARM64
+
+	if f.Characteristics&pe.IMAGE_FILE_DLL == pe.IMAGE_FILE_DLL {
+		p.DLL = true
+	} else if f.Characteristics&pe.IMAGE_FILE_EXECUTABLE_IMAGE != pe.IMAGE_FILE_EXECUTABLE_IMAGE {
+		return PEInfo{}, errors.New("File was not exe or dll")
+	}
 
 	if p.PE64Bit {
 		p.OriginalImageBase = uintptr(f.OptionalHeader.(*pe.OptionalHeader64).ImageBase)

