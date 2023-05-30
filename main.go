@@ -48,6 +48,7 @@ func main() {
 		switch f.Name {
 		case "serve":
 			hasFile = true
+			isServer = true
 		case "listen":
 			isServer = true
 
@@ -68,7 +69,7 @@ func main() {
 			if err != nil {
 				log.Fatal("could not generate password: ", err)
 			}
-			log.Println("no password selected generated one: ", password)
+			log.Println("no password selected generated one: ", *password)
 		}
 
 		if !hasFile {
