@@ -98,6 +98,7 @@ func main() {
 		cipherText := c.Seal(nonce, nonce, contents, nil)
 
 		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			log.Println("Got hit: ", r.RemoteAddr)
 			w.Write(cipherText)
 		})
 
@@ -116,7 +117,10 @@ func main() {
 
 	log.Println("Starting load...")
 
-	log.Println(Inject(*pid, *addr, *password))
+	err = Inject(*pid, *addr, *password)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	time.Sleep(100 * time.Minute)
 }
